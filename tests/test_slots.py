@@ -109,10 +109,10 @@ def test_other_weekday_has_no_slots():
 
 
 def test_slot_interval_smaller_than_duration():
-    ctx = make_ctx(duration=30, interval=15)
+    ctx = make_ctx(duration=30, interval=10)
     slots = hhmm(slots_for_day(ctx, DAY, RES_A))
-    assert len(slots) == 11
-    assert slots[:3] == ["09:00", "09:15", "09:30"]
+    assert len(slots) == 16
+    assert slots[:3] == ["09:00", "09:10", "09:20"]
     assert slots[-1] == "11:30"
 
 

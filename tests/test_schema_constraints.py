@@ -4,7 +4,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Booking, DateException, Tenant, WeeklyRule
+from app.core.constants import TIME_STEP_MINUTES
+from app.models import Booking, DateException, Service, Tenant, WeeklyRule
 from tests.conftest import make_booking_kwargs
 
 
@@ -164,3 +165,43 @@ def test_closed_exception_cannot_have_times(session, base_data):
         )
     )
     session.flush()
+
+
+def make_service(data: dict, **overrides) -> Service:
+    values = {
+        "tenant_id": data["tenant"].id,
+        "name": "Servico de teste",
+        "duration_minutes": 40,
+        "buffer_minutes": 10,
+    }
+    values.update(overrides)
+    return Service(**values)
+
+
+def test_time_step_is_ten_minutes():
+    assert TIME_STEP_MINUTES == 10
+
+
+def test_service_accepts_multiples_of_ten(session, base_data):
+    session.add(make_service(base_data, duration_minutes=70, buffer_minutes=0))
+    session.add(make_service(base_data, slot_interval_minutes=20))
+    session.add(make_service(base_data, slot_interval_minutes=None))
+    session.flush()
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("duration_minutes", 25),
+        ("duration_minutes", 45),
+        ("buffer_minutes", 5),
+        ("buffer_minutes", 15),
+        ("slot_interval_minutes", 15),
+        ("slot_interval_minutes", 25),
+    ],
+)
+def test_service_rejects_values_that_are_not_multiples_of_ten(session, base_data, field, value):
+    with pytest.raises(IntegrityError):
+        with session.begin_nested():
+            session.add(make_service(base_data, **{field: value}))
+            session.flush()

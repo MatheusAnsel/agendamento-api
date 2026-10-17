@@ -14,6 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.constants import TIME_STEP_MINUTES
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 
@@ -39,6 +40,13 @@ class Service(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         CheckConstraint(
             "slot_interval_minutes IS NULL OR slot_interval_minutes > 0",
             name="slot_interval_positive",
+        ),
+        # Duracao, intervalo entre inicios e buffer sao sempre multiplos de TIME_STEP_MINUTES.
+        CheckConstraint(f"mod(duration_minutes, {TIME_STEP_MINUTES}) = 0", name="duration_step"),
+        CheckConstraint(f"mod(buffer_minutes, {TIME_STEP_MINUTES}) = 0", name="buffer_step"),
+        CheckConstraint(
+            f"slot_interval_minutes IS NULL OR mod(slot_interval_minutes, {TIME_STEP_MINUTES}) = 0",
+            name="slot_interval_step",
         ),
     )
 
