@@ -2,7 +2,7 @@
 
 Backend de agendamento multi-tenant, feito para ser consumido por vários sites front end (landing pages, sites institucionais, lojas) através de uma API HTTP. O dono de cada negócio define as datas e os horários disponíveis, e o front end só consulta a API para exibir e criar agendamentos.
 
-Status: em desenvolvimento. Etapa 1 do roadmap concluída (estrutura do projeto, modelos e primeira migration). O motor de slots e os endpoints são as próximas etapas.
+Status: em desenvolvimento. Etapas 1 e 3 do roadmap concluídas (estrutura, modelos e migrations; motor de slots). Autenticação e endpoints são as próximas etapas.
 
 ## Como rodar localmente
 
@@ -72,6 +72,7 @@ Modo opcional: datas abertas manualmente, em que só existem horários nos dias 
 Parâmetros por serviço:
 
 - Duração do serviço
+- Intervalo entre os inícios dos horários oferecidos (`slot_interval_minutes`). Se não informado, é igual à duração
 - Intervalo entre atendimentos (buffer)
 - Antecedência mínima e máxima para agendar
 - Capacidade por horário (uma pessoa ou várias)
@@ -79,6 +80,16 @@ Parâmetros por serviço:
 ### Cálculo dos horários
 
 Os horários livres são calculados na hora da consulta. O banco guarda apenas as regras e os agendamentos. Quando o front end pede os slots de um dia, o backend monta a grade, subtrai exceções, bloqueios e agendamentos existentes e devolve os livres.
+
+O cálculo fica em `app/services/slots.py`, como funções puras (sem ORM nem banco), o que permite testar todas as regras sem PostgreSQL. Regras, na ordem em que são aplicadas, para uma data local do tenant e um recurso:
+
+1. **Janelas do dia.** Uma exceção `closed` (do recurso ou do tenant inteiro) fecha o dia. Exceções `custom_hours` substituem a regra semanal, e as do próprio recurso têm prioridade sobre as válidas para o tenant todo. No modo `open_dates`, dias sem `custom_hours` ficam sem horários. Nos demais casos vale a regra semanal. Janelas sobrepostas são unidas.
+2. **Candidatos.** A partir do início de cada janela, de `slot_interval_minutes` em `slot_interval_minutes`, enquanto o atendimento inteiro couber na janela. A conta é feita em UTC somando durações reais, então dias de mudança de horário de verão saem corretos e horários próximos da meia-noite continuam na data local do tenant.
+3. **Filtros.** Antecedência mínima e máxima (o limite máximo é inclusivo); bloqueios pontuais (consideram só o atendimento, sem o buffer); agendamentos ativos, comparando o intervalo ocupado do candidato (atendimento mais buffer) com o de cada agendamento, a mesma semântica da constraint de exclusão do banco. O buffer, portanto, protege os dois lados de um agendamento existente.
+4. **Capacidade.** Serviços com capacidade maior que 1 aceitam vários agendamentos de turma no mesmo início, até o limite de vagas, e informam as vagas restantes. Qualquer outro agendamento sobreposto no recurso bloqueia o horário.
+5. **Vários recursos.** `slots_for_service` junta os recursos: cada horário aparece uma vez, com a lista dos recursos livres. O recurso atribuído quando o cliente não escolhe é o primeiro livre, na ordem informada.
+
+A checagem do motor serve para mostrar horários. A garantia contra agendamento duplo continua sendo a constraint do banco, porque duas requisições simultâneas podem ver o mesmo horário livre.
 
 ### Concorrência
 
@@ -226,7 +237,7 @@ agendamento-api/
 
 1. Modelos e migrations (concluído)
 2. Autenticação: API key pública e JWT do dono
-3. Motor de slots com testes (regra semanal, exceções, bloqueios, buffer, antecedência, fuso)
+3. Motor de slots com testes (regra semanal, exceções, bloqueios, buffer, antecedência, fuso) (concluído)
 4. Endpoints públicos de consulta (`services`, `availability`, `slots`)
 5. `POST /bookings` com constraint de exclusão e idempotência
 6. Endpoints administrativos

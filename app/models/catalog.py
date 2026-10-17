@@ -36,6 +36,10 @@ class Service(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         CheckConstraint("buffer_minutes >= 0", name="buffer_non_negative"),
         CheckConstraint("capacity >= 1", name="capacity_positive"),
         CheckConstraint("price_cents IS NULL OR price_cents >= 0", name="price_non_negative"),
+        CheckConstraint(
+            "slot_interval_minutes IS NULL OR slot_interval_minutes > 0",
+            name="slot_interval_positive",
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -48,6 +52,8 @@ class Service(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     buffer_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     # 1 = atendimento individual. Maior que 1 = aulas/turmas (varias pessoas no mesmo horario).
     capacity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    # Distancia entre os inicios dos horarios oferecidos. Nulo = igual a duracao do servico.
+    slot_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 
