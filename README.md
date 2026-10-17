@@ -2,7 +2,7 @@
 
 Backend de agendamento multi-tenant, feito para ser consumido por vários sites front end (landing pages, sites institucionais, lojas) através de uma API HTTP. O dono de cada negócio define as datas e os horários disponíveis, e o front end só consulta a API para exibir e criar agendamentos.
 
-Status: em desenvolvimento. Etapas 1 e 3 do roadmap concluídas (estrutura, modelos e migrations; motor de slots). Autenticação e endpoints são as próximas etapas.
+Status: em desenvolvimento. Etapas 1 a 4 do roadmap concluídas (modelos e migrations; autenticação; motor de slots; endpoints públicos de consulta). A criação de agendamentos e a área administrativa são as próximas etapas.
 
 ## Como rodar localmente
 
@@ -172,25 +172,47 @@ Princípio: pedir o mínimo necessário, em respeito à LGPD e à conversão das
 
 ## API
 
-### Pública (API key + CORS por domínio)
+### Pública (header `X-API-Key` + origem permitida)
 
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/v1/config` | Configuração de campos e regras do tenant |
-| GET | `/v1/services` | Serviços disponíveis |
-| GET | `/v1/availability?service_id=&from=&to=` | Dias com vaga |
-| GET | `/v1/slots?service_id=&date=` | Horários livres do dia |
-| POST | `/v1/bookings` | Cria um agendamento |
-| GET | `/v1/bookings/{token}` | Consulta um agendamento |
-| POST | `/v1/bookings/{token}/cancel` | Cancela um agendamento |
+| Método | Rota | Descrição | Situação |
+|---|---|---|---|
+| GET | `/v1/config` | Configuração de campos e regras do tenant | pronto |
+| GET | `/v1/resources` | Profissionais/agendas ativos | pronto |
+| GET | `/v1/services` | Serviços disponíveis, com os recursos que atendem cada um | pronto |
+| GET | `/v1/availability?service_id=&from=&to=` | Dias com vaga (máximo de 62 dias) | pronto |
+| GET | `/v1/slots?service_id=&date=` | Horários livres do dia, no fuso do negócio | pronto |
+| POST | `/v1/bookings` | Cria um agendamento | a fazer |
+| GET | `/v1/bookings/{token}` | Consulta um agendamento | a fazer |
+| POST | `/v1/bookings/{token}/cancel` | Cancela um agendamento | a fazer |
+
+`resource_id` é opcional em `/slots` e `/availability`: sem ele, o horário aparece uma vez com a lista de profissionais livres.
 
 ### Administrativa (JWT do dono)
 
+Prontos: `POST /v1/admin/login` (slug do negócio, e-mail e senha), `GET /v1/admin/me` e gestão das chaves de API (`GET`/`POST /v1/admin/api-keys`, `DELETE /v1/admin/api-keys/{id}` para revogar). A chave completa só aparece na criação.
+
+A fazer:
+
 - CRUD de serviços, recursos, horários semanais, exceções e bloqueios
 - Listar, confirmar, cancelar e remarcar agendamentos
-- Gerar e rotacionar a API key
+
+### Como o dono ganha acesso
+
+Não existe cadastro aberto. Quem opera a plataforma cria o negócio e o login do dono (e-mail e senha) e entrega ao cliente:
+
+```
+python -m app.cli create-tenant --name "Esmalteria da Ana" --slug esmalteria-ana \
+    --owner-email ana@exemplo.com --owner-password 'uma-senha-forte' \
+    --origin https://esmalteriadaana.com.br
+```
+
+O comando cria o negócio, uma agenda padrão, o dono e a primeira chave de API (exibida uma única vez). A chave vai no front end do site; o dono usa o login para configurar serviços e horários.
 
 ## Segurança
+
+- Chave de API guardada só como hash SHA-256; senha com scrypt; JWT HS256 com expiração
+- Com `ENV=production` a API não sobe sem um `JWT_SECRET` de 32+ caracteres
+- Se a requisição traz `Origin`, ele precisa estar em `allowed_origins` do negócio (lista vazia bloqueia navegadores). Chamadas de servidor, sem `Origin`, só precisam da chave
 
 - Rate limit por IP e por API key no endpoint público
 - Validação de entrada com Pydantic
@@ -238,9 +260,9 @@ agendamento-api/
 ## Roadmap
 
 1. Modelos e migrations (concluído)
-2. Autenticação: API key pública e JWT do dono
+2. Autenticação: API key pública e JWT do dono (concluído)
 3. Motor de slots com testes (regra semanal, exceções, bloqueios, buffer, antecedência, fuso) (concluído)
-4. Endpoints públicos de consulta (`services`, `availability`, `slots`)
+4. Endpoints públicos de consulta (`config`, `resources`, `services`, `availability`, `slots`) (concluído)
 5. `POST /bookings` com constraint de exclusão e idempotência
 6. Endpoints administrativos
 7. CORS por tenant, rate limit e deploy no Render
