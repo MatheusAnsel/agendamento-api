@@ -147,3 +147,12 @@ async def client():
         yield c
     app.dependency_overrides.clear()
     await eng.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    from app.core.ratelimit import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()

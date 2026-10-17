@@ -9,14 +9,15 @@ Exemplo:
 import argparse
 import re
 import sys
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import generate_api_key, hash_password
-from app.models import AdminUser, ApiKey, Resource, Tenant
+from app.models import AdminUser, ApiKey, Booking, Resource, Tenant
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MIN_PASSWORD_LENGTH = 8
@@ -62,6 +63,17 @@ def create_tenant(
     return tenant, plain
 
 
+def expire_pending(session: Session, now: datetime | None = None) -> int:
+    """Cancela agendamentos pendentes cujo horario ja passou sem o dono confirmar."""
+    now = now or datetime.now(UTC)
+    result = session.execute(
+        update(Booking)
+        .where(Booking.status == "pendente", Booking.start_at <= now)
+        .values(status="cancelado", cancelled_at=now, cancel_reason="Expirado sem confirmacao")
+    )
+    return result.rowcount
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -78,11 +90,19 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="Site autorizado a usar a chave (repita para varios). Ex.: https://meusite.com.br",
     )
+    sub.add_parser("expire-pending", help="Cancela pendentes que ja passaram do horario")
     args = parser.parse_args(argv)
+
+    if args.command == "expire-pending":
+        with Session(create_engine(get_settings().database_url)) as session:
+            total = expire_pending(session)
+            session.commit()
+        print(f"Agendamentos pendentes expirados: {total}")
+        return 0
 
     engine = create_engine(get_settings().database_url)
     try:
-        with Session(engine) as session:
+        with Session(engine, expire_on_commit=False) as session:
             tenant, key = create_tenant(
                 session,
                 name=args.name,

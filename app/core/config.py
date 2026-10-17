@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://agendamento:agendamento@localhost:5432/agendamento"
     jwt_secret: str = DEFAULT_JWT_SECRET
     jwt_expire_minutes: int = 60 * 12
+    # Limites por IP e por minuto. 0 desliga.
+    rate_limit_bookings_per_minute: int = 10
+    rate_limit_login_per_minute: int = 10
+    # Quantos proxies confiaveis ficam na frente da API (Render = 1).
+    trusted_proxy_hops: int = 1
 
     @field_validator("database_url")
     @classmethod

@@ -1,0 +1,33 @@
+# Blueprint do Render. O banco fica no Supabase: informe a DATABASE_URL no painel.
+# Use a conexao direta ou o pooler em modo sessao (nao o modo transacao, porta 6543).
+services:
+  - type: web
+    name: agendamento-api
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    preDeployCommand: alembic upgrade head
+    envVars:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+
+  # Cancela agendamentos pendentes que passaram do horario sem confirmacao.
+  - type: cron
+    name: agendamento-expirar-pendentes
+    runtime: docker
+    plan: starter
+    schedule: "0 * * * *"
+    dockerCommand: python -m app.cli expire-pending
+    envVars:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true

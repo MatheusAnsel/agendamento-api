@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.ratelimit import rate_limit
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_access_token,
@@ -25,7 +26,11 @@ from app.schemas.admin import (
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 
 
-@router.post("/login", response_model=TokenOut)
+@router.post(
+    "/login",
+    response_model=TokenOut,
+    dependencies=[Depends(rate_limit("login", "rate_limit_login_per_minute"))],
+)
 async def login(data: LoginIn, session: SessionDep) -> TokenOut:
     row = (
         await session.execute(

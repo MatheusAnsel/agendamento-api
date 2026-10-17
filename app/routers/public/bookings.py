@@ -1,8 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Response, status
+from fastapi import APIRouter, Depends, Header, Response, status
 
 from app.core.errors import AppError
+from app.core.ratelimit import rate_limit
 from app.deps import CurrentTenant, SessionDep
 from app.schemas.booking import BookingCancelIn, BookingCreateIn, BookingOut
 from app.services.booking import (
@@ -17,7 +18,12 @@ router = APIRouter(prefix="/v1/bookings", tags=["publico"])
 IdempotencyKey = Annotated[str | None, Header(alias="Idempotency-Key", max_length=80)]
 
 
-@router.post("", response_model=BookingOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=BookingOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("bookings", "rate_limit_bookings_per_minute"))],
+)
 async def create(
     data: BookingCreateIn,
     response: Response,
