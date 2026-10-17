@@ -1,6 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.core.errors import AppError
 from app.routers import admin, public
 
 app = FastAPI(
@@ -21,6 +23,13 @@ app.add_middleware(
 
 app.include_router(public.router)
 app.include_router(admin.router)
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code, content={"detail": exc.message, "code": exc.code}
+    )
 
 
 @app.get("/health", tags=["infra"])

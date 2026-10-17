@@ -97,6 +97,7 @@ async def build_context(
     first_day: date,
     last_day: date,
     now: datetime | None = None,
+    exclude_booking_id: UUID | None = None,
 ) -> SlotContext:
     """Monta o contexto do motor para o intervalo de datas locais [first_day, last_day]."""
     rules = tenant_rules(tenant)
@@ -136,9 +137,11 @@ async def build_context(
             )
         )
     ).scalars()
+    booking_filters = [Booking.id != exclude_booking_id] if exclude_booking_id else []
     bookings = (
         await session.execute(
             select(Booking).where(
+                *booking_filters,
                 Booking.tenant_id == tenant.id,
                 Booking.resource_id.in_(resource_ids),
                 Booking.status != "cancelado",

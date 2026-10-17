@@ -1,15 +1,22 @@
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import create_engine
+from helpers import PASSWORD, SITE
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine, delete, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
 
 from alembic import command
+from app.cli import create_tenant
 from app.core.config import get_settings
-from app.models import Customer, Resource, Service, Tenant
+from app.db.session import get_session
+from app.main import app
+from app.models import Booking, Customer, Resource, Service, Tenant, WeeklyRule
 
 
 @pytest.fixture(scope="session")
@@ -74,3 +81,69 @@ def make_booking_kwargs(data: dict, resource, start, minutes=30, buffer=10, **ex
         "occupied_until": end + timedelta(minutes=buffer),
         **extra,
     }
+
+
+# ---- fixtures da API (dados gravados de verdade, removidos ao final) ----
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
+def env(engine):
+    """Negocio completo gravado de verdade (commit), removido ao final do teste."""
+    slug = f"teste-{uuid.uuid4().hex[:8]}"
+    with Session(engine) as s:
+        tenant, key = create_tenant(
+            s,
+            name="Esmalteria Teste",
+            slug=slug,
+            owner_email="Dona@Exemplo.com",
+            owner_password=PASSWORD,
+            origins=[SITE],
+        )
+        resource = s.execute(select(Resource).where(Resource.tenant_id == tenant.id)).scalar_one()
+        service = Service(tenant_id=tenant.id, name="Esmaltacao", duration_minutes=30)
+        s.add(service)
+        s.flush()
+        for weekday in range(7):
+            s.add(
+                WeeklyRule(
+                    tenant_id=tenant.id,
+                    resource_id=resource.id,
+                    weekday=weekday,
+                    start_time=time(9, 0),
+                    end_time=time(12, 0),
+                )
+            )
+        s.commit()
+        data = {
+            "tenant_id": tenant.id,
+            "slug": slug,
+            "key": key,
+            "resource_id": resource.id,
+            "service_id": service.id,
+        }
+    yield data
+    with Session(engine) as s:
+        s.execute(delete(Booking).where(Booking.tenant_id == data["tenant_id"]))
+        s.execute(delete(Tenant).where(Tenant.id == data["tenant_id"]))
+        s.commit()
+
+
+@pytest.fixture
+async def client():
+    eng = create_async_engine(get_settings().database_url, poolclass=NullPool)
+    maker = async_sessionmaker(eng, expire_on_commit=False)
+
+    async def override():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
+    await eng.dispose()
