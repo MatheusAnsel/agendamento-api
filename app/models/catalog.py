@@ -1,0 +1,71 @@
+import uuid
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class Resource(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    """Quem (ou o que) atende: barbeiro, sala, mecanico. Todo tenant tem ao menos um."""
+
+    __tablename__ = "resources"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+
+
+class Service(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    __tablename__ = "services"
+    __table_args__ = (
+        CheckConstraint("duration_minutes > 0", name="duration_positive"),
+        CheckConstraint("buffer_minutes >= 0", name="buffer_non_negative"),
+        CheckConstraint("capacity >= 1", name="capacity_positive"),
+        CheckConstraint("price_cents IS NULL OR price_cents >= 0", name="price_non_negative"),
+    )
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Intervalo apos o atendimento, durante o qual o recurso fica ocupado.
+    buffer_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # 1 = atendimento individual. Maior que 1 = aulas/turmas (varias pessoas no mesmo horario).
+    capacity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+
+
+# Quais recursos podem executar cada servico.
+service_resources = Table(
+    "service_resources",
+    Base.metadata,
+    Column(
+        "service_id",
+        UUID(as_uuid=True),
+        ForeignKey("services.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "resource_id",
+        UUID(as_uuid=True),
+        ForeignKey("resources.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)

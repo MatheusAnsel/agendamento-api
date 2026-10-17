@@ -2,7 +2,28 @@
 
 Backend de agendamento multi-tenant, feito para ser consumido por vários sites front end (landing pages, sites institucionais, lojas) através de uma API HTTP. O dono de cada negócio define as datas e os horários disponíveis, e o front end só consulta a API para exibir e criar agendamentos.
 
-Status: em planejamento. Este README descreve as definições de projeto antes da implementação.
+Status: em desenvolvimento. Etapa 1 do roadmap concluída (estrutura do projeto, modelos e primeira migration). O motor de slots e os endpoints são as próximas etapas.
+
+## Como rodar localmente
+
+Com Docker:
+
+```
+docker compose up --build
+```
+
+A API sobe em `http://localhost:8000` (documentação em `/docs`) e as migrations rodam na inicialização.
+
+Sem Docker (precisa de um PostgreSQL 14+ local):
+
+```
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env        # ajuste DATABASE_URL
+alembic upgrade head
+uvicorn app.main:app --reload
+pytest                      # aplica as migrations no banco configurado e roda os testes
+```
 
 ## Objetivo
 
@@ -61,7 +82,8 @@ Os horários livres são calculados na hora da consulta. O banco guarda apenas a
 
 ### Concorrência
 
-- Constraint de exclusão no PostgreSQL (`EXCLUDE USING gist` com `tstzrange`) impede agendamentos sobrepostos para o mesmo recurso.
+- Constraint de exclusão no PostgreSQL (`EXCLUDE USING gist` com `tstzrange`) impede agendamentos sobrepostos para o mesmo recurso. O intervalo protegido vai do início do atendimento até `occupied_until` (fim do serviço mais o buffer, calculado pelo backend). Agendamentos cancelados não ocupam o horário.
+- Serviços com capacidade maior que 1 (aulas, turmas) gravam `is_exclusive = false` e ficam fora dessa constraint. A lotação deles é controlada na aplicação, sob lock.
 - Header `Idempotency-Key` no `POST /v1/bookings` evita duplicidade por clique duplo ou retry.
 - Reserva temporária (hold) de 5 a 10 minutos fica como opção futura, útil quando houver pagamento.
 
@@ -167,9 +189,17 @@ Princípio: pedir o mínimo necessário, em respeito à LGPD e à conversão das
 
 ## Modelo de dados
 
-`tenants`, `api_keys`, `resources`, `services`, `weekly_rules`, `date_exceptions`, `blocks`, `bookings`, `customers`
+`tenants`, `admin_users`, `api_keys`, `resources`, `services`, `service_resources`, `weekly_rules`, `date_exceptions`, `blocks`, `customers`, `bookings`
 
-## Estrutura de pastas prevista
+Observações:
+
+- `admin_users` guarda o login do dono (e-mail e hash de senha) para emitir o JWT.
+- `api_keys` guarda apenas o hash SHA-256 da chave, mais um prefixo para identificação. A chave completa só é exibida na criação.
+- `service_resources` define quais recursos executam cada serviço.
+- `date_exceptions` tem dois tipos: `closed` (dia fechado) e `custom_hours` (horário especial). No modo `open_dates` do tenant, são as linhas `custom_hours` que abrem os dias.
+- Chaves primárias são UUID. Tenants, recursos e serviços usam soft delete (`deleted_at`).
+
+## Estrutura de pastas
 
 ```
 agendamento-api/
@@ -194,7 +224,7 @@ agendamento-api/
 
 ## Roadmap
 
-1. Modelos e migrations
+1. Modelos e migrations (concluído)
 2. Autenticação: API key pública e JWT do dono
 3. Motor de slots com testes (regra semanal, exceções, bloqueios, buffer, antecedência, fuso)
 4. Endpoints públicos de consulta (`services`, `availability`, `slots`)
@@ -208,7 +238,7 @@ agendamento-api/
 | Parte | Onde | Motivo |
 |---|---|---|
 | API FastAPI | Render (Web Service, via Dockerfile) | Processo sempre ligado, deploy automático a cada push no GitHub, variáveis de ambiente e logs |
-| Banco | Supabase (PostgreSQL) | Suporte às extensões `btree_gist` (constraint anti-sobreposição de horários) e `pgcrypto`, backups e painel SQL |
+| Banco | Supabase (PostgreSQL) | Suporte à extensão `btree_gist` (constraint anti-sobreposição de horários), backups e painel SQL |
 | Lembretes e jobs (fase 2) | Render Cron Job | Evita rodar o APScheduler dentro da API, o que duplicaria jobs com mais de uma instância |
 | Domínio | `api.seudominio.com` apontando para o Render | URL estável mesmo se a hospedagem mudar |
 
