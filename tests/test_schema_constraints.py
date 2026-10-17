@@ -186,7 +186,16 @@ def test_service_accepts_multiples_of_ten(session, base_data):
     session.add(make_service(base_data, duration_minutes=70, buffer_minutes=0))
     session.add(make_service(base_data, slot_interval_minutes=20))
     session.add(make_service(base_data, slot_interval_minutes=None))
+    # 0 e aceito e significa "igual a duracao" (um atendimento logo apos o outro).
+    session.add(make_service(base_data, slot_interval_minutes=0))
     session.flush()
+
+
+def test_service_rejects_negative_slot_interval(session, base_data):
+    with pytest.raises(IntegrityError):
+        with session.begin_nested():
+            session.add(make_service(base_data, slot_interval_minutes=-10))
+            session.flush()
 
 
 @pytest.mark.parametrize(

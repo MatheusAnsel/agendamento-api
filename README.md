@@ -72,12 +72,12 @@ Modo opcional: datas abertas manualmente, em que só existem horários nos dias 
 Parâmetros por serviço:
 
 - Duração do serviço (`duration_minutes`)
-- Intervalo entre os inícios dos horários oferecidos (`slot_interval_minutes`). Se não informado, é igual à duração
+- Intervalo entre os inícios dos horários oferecidos (`slot_interval_minutes`). Se não informado ou igual a 0, é igual à duração (um atendimento logo após o outro, sem folga)
 - Intervalo entre atendimentos (buffer, `buffer_minutes`)
 - Antecedência mínima e máxima para agendar
 - Capacidade por horário (uma pessoa ou várias)
 
-O dono ajusta duração, intervalo entre inícios e buffer em passos de 10 minutos. A regra é garantida no banco por constraints (`mod(valor, 10) = 0`) e o passo fica centralizado em `TIME_STEP_MINUTES`, em `app/core/constants.py`. Exemplos válidos: duração de 40 ou 70 minutos, intervalo de 20 minutos, buffer de 0 ou 10 minutos. Valores como 25 ou 45 minutos são rejeitados.
+O dono ajusta duração, intervalo entre inícios e buffer em passos de 10 minutos. A regra é garantida no banco por constraints (`mod(valor, 10) = 0`) e o passo fica centralizado em `TIME_STEP_MINUTES`, em `app/core/constants.py`. Exemplos válidos: duração de 40 ou 70 minutos, intervalo de 0 (igual à duração) ou 20 minutos, buffer de 0 ou 10 minutos. Valores como 25 ou 45 minutos, e números negativos, são rejeitados.
 
 ### Cálculo dos horários
 

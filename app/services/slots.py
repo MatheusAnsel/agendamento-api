@@ -50,6 +50,7 @@ class ServiceSpec:
 
     @property
     def step_minutes(self) -> int:
+        """Distancia entre os inicios dos horarios. Nulo ou 0 = igual a duracao do servico."""
         return self.slot_interval_minutes or self.duration_minutes
 
 

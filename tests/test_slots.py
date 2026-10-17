@@ -116,6 +116,13 @@ def test_slot_interval_smaller_than_duration():
     assert slots[-1] == "11:30"
 
 
+@pytest.mark.parametrize("interval", [None, 0])
+def test_zero_or_missing_interval_means_back_to_back_slots(interval):
+    ctx = make_ctx(duration=30, interval=interval)
+    slots = hhmm(slots_for_day(ctx, DAY, RES_A))
+    assert slots == ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30"]
+
+
 def test_window_shorter_than_service_gives_nothing():
     ctx = make_ctx(weekly=[WeeklyWindow(RES_A, TUESDAY, time(9), time(9, 20))], duration=30)
     assert slots_for_day(ctx, DAY, RES_A) == []
