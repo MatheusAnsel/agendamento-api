@@ -208,6 +208,17 @@ python -m app.cli create-tenant --name "Esmalteria da Ana" --slug esmalteria-ana
 
 O comando cria o negócio, uma agenda padrão, o dono e a primeira chave de API (exibida uma única vez). A chave vai no front end do site; o dono usa o login para configurar serviços e horários.
 
+## Aviso ao dono pelo WhatsApp Business
+
+Quando um agendamento é concluído, a API envia uma mensagem ao WhatsApp Business da empresa com: nome e telefone do cliente, dia e horário marcados e o serviço escolhido (e o profissional, quando houver mais de um).
+
+- O envio usa a WhatsApp Business Platform (Cloud API da Meta). O aplicativo comum do WhatsApp Business não tem API, então o número da empresa precisa estar cadastrado nessa plataforma.
+- Como a empresa recebe a mensagem sem ter falado antes com o número da API, o envio usa um modelo de mensagem (template) aprovado pela Meta.
+- Por negócio ficam configurados: número que recebe os avisos, identificador do número na Meta e token de acesso (guardado criptografado).
+- O aviso não pode atrasar nem derrubar o agendamento: o pedido de envio é gravado na mesma transação do agendamento (tabela de saída) e um processo separado envia, com novas tentativas em caso de falha. Se o WhatsApp estiver fora do ar, o agendamento continua válido e o aviso sai depois.
+- Cancelamentos e remarcações geram um aviso próprio.
+- Fase 2 (continua valendo): confirmação e lembrete por WhatsApp ao cliente.
+
 ## Segurança
 
 - Chave de API guardada só como hash SHA-256; senha com scrypt; JWT HS256 com expiração
@@ -263,7 +274,8 @@ agendamento-api/
 2. Autenticação: API key pública e JWT do dono (concluído)
 3. Motor de slots com testes (regra semanal, exceções, bloqueios, buffer, antecedência, fuso) (concluído)
 4. Endpoints públicos de consulta (`config`, `resources`, `services`, `availability`, `slots`) (concluído)
-5. `POST /bookings` com constraint de exclusão e idempotência
+5. `POST /bookings` com constraint de exclusão e idempotência, gravando o aviso ao dono na tabela de saída
+5b. Envio do aviso pelo WhatsApp Business (Cloud API) com novas tentativas
 6. Endpoints administrativos
 7. CORS por tenant, rate limit e deploy no Render
 8. Fase 2: e-mail e WhatsApp, lembretes, webhooks, OTP, sincronização com Google Calendar, pagamento/sinal
