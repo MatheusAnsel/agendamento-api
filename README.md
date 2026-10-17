@@ -208,7 +208,9 @@ python -m app.cli create-tenant --name "Esmalteria da Ana" --slug esmalteria-ana
 
 O comando cria o negócio, uma agenda padrão, o dono e a primeira chave de API (exibida uma única vez). A chave vai no front end do site; o dono usa o login para configurar serviços e horários.
 
-## Aviso ao dono pelo WhatsApp Business
+## Aviso ao dono pelo WhatsApp Business (adiado para a fase 2)
+
+Decidido, mas deixado para depois do fluxo principal de agendamento. Definição:
 
 Quando um agendamento é concluído, a API envia uma mensagem ao WhatsApp Business da empresa com: nome e telefone do cliente, dia e horário marcados e o serviço escolhido (e o profissional, quando houver mais de um).
 
@@ -274,11 +276,10 @@ agendamento-api/
 2. Autenticação: API key pública e JWT do dono (concluído)
 3. Motor de slots com testes (regra semanal, exceções, bloqueios, buffer, antecedência, fuso) (concluído)
 4. Endpoints públicos de consulta (`config`, `resources`, `services`, `availability`, `slots`) (concluído)
-5. `POST /bookings` com constraint de exclusão e idempotência, gravando o aviso ao dono na tabela de saída
-5b. Envio do aviso pelo WhatsApp Business (Cloud API) com novas tentativas
+5. `POST /bookings` com constraint de exclusão e idempotência
 6. Endpoints administrativos
 7. CORS por tenant, rate limit e deploy no Render
-8. Fase 2: e-mail e WhatsApp, lembretes, webhooks, OTP, sincronização com Google Calendar, pagamento/sinal
+8. Fase 2: aviso ao dono pelo WhatsApp Business, e-mail e WhatsApp ao cliente, lembretes, webhooks, OTP, sincronização com Google Calendar, pagamento/sinal
 
 ## Hospedagem e ambientes
 
