@@ -21,7 +21,7 @@ Status: em planejamento. Este README descreve as definições de projeto antes d
 - APScheduler para lembretes e jobs agendados (fase 2)
 - slowapi para rate limit
 - pytest para testes, com foco no motor de slots
-- Deploy previsto: Render
+- Hospedagem: Render (API) e Supabase (PostgreSQL). Detalhes na seção Hospedagem e ambientes
 
 ## Conceitos
 
@@ -202,6 +202,28 @@ agendamento-api/
 6. Endpoints administrativos
 7. CORS por tenant, rate limit e deploy no Render
 8. Fase 2: e-mail e WhatsApp, lembretes, webhooks, OTP, sincronização com Google Calendar, pagamento/sinal
+
+## Hospedagem e ambientes
+
+| Parte | Onde | Motivo |
+|---|---|---|
+| API FastAPI | Render (Web Service, via Dockerfile) | Processo sempre ligado, deploy automático a cada push no GitHub, variáveis de ambiente e logs |
+| Banco | Supabase (PostgreSQL) | Suporte às extensões `btree_gist` (constraint anti-sobreposição de horários) e `pgcrypto`, backups e painel SQL |
+| Lembretes e jobs (fase 2) | Render Cron Job | Evita rodar o APScheduler dentro da API, o que duplicaria jobs com mais de uma instância |
+| Domínio | `api.seudominio.com` apontando para o Render | URL estável mesmo se a hospedagem mudar |
+
+Ambientes:
+
+- Desenvolvimento: Docker Compose local com PostgreSQL.
+- Produção: Render + Supabase, com migrations executadas no deploy (`alembic upgrade head`).
+
+Decisões e cuidados:
+
+- A Vercel não hospeda esta API (modelo serverless, sem processo contínuo para jobs e com atrito de pool de conexões). Ela fica reservada para os front ends que consomem a API.
+- O plano gratuito do Render hiberna a API após inatividade e o do Supabase pausa o projeto. Servem para desenvolvimento e demonstração; produção com cliente real usa plano pago.
+- A conexão do SQLAlchemy com o Supabase usa a conexão direta ou o pooler em modo sessão. O pooler em modo transação (porta 6543) costuma dar problema com prepared statements no driver assíncrono.
+- Segredos (chave do JWT, URL do banco, chave de e-mail) ficam apenas nas variáveis de ambiente do Render, nunca no repositório.
+- Alternativa simplificada: web service e Render Postgres na mesma plataforma, com rede interna e uma conta só.
 
 ## Fora do escopo desta etapa
 
