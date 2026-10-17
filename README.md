@@ -2,7 +2,7 @@
 
 Backend de agendamento multi-tenant, feito para ser consumido por vários sites front end (landing pages, sites institucionais, lojas) através de uma API HTTP. O dono de cada negócio define as datas e os horários disponíveis, e o front end só consulta a API para exibir e criar agendamentos.
 
-Status: em desenvolvimento. Etapas 1 a 4 do roadmap concluídas (modelos e migrations; autenticação; motor de slots; endpoints públicos de consulta). A criação de agendamentos e a área administrativa são as próximas etapas.
+Status: o fluxo completo funciona e está coberto por testes automatizados: consulta de horários, criação, consulta e cancelamento de agendamentos pelo cliente, e a área do dono para configurar tudo. Faltam o deploy em produção e os itens da fase 2 (WhatsApp, e-mail, lembretes).
 
 ## Como rodar localmente
 
@@ -23,7 +23,39 @@ cp .env.example .env        # ajuste DATABASE_URL
 alembic upgrade head
 uvicorn app.main:app --reload
 pytest                      # aplica as migrations no banco configurado e roda os testes
+python -m app.cli create-tenant --help
 ```
+
+## Demonstração
+
+O repositório traz uma página de exemplo (`examples/agendar.html`) e um script que monta um negócio fictício (uma esmalteria com duas profissionais) usando a própria API. É a base para o botão de agendamento dos sites dos clientes: a página só conhece a URL da API e a chave do site.
+
+```
+uvicorn app.main:app --reload                   # terminal 1
+python examples/seed_demo.py                    # terminal 2: cria o negócio e imprime a chave
+python -m http.server 5500 --directory examples # terminal 3
+# abra http://localhost:5500/agendar.html?key=<chave impressa>
+```
+
+Passo a passo do cliente no site. Os dias e horários vêm de `GET /v1/availability` e `GET /v1/slots`, e o formulário é montado a partir de `GET /v1/config`:
+
+![Escolha do serviço](docs/img/agendar-1-servico.png)
+
+![Profissional, dia, horário e dados](docs/img/agendar-2-horario-e-dados.png)
+
+![Agendamento confirmado](docs/img/agendar-3-confirmado.png)
+
+Documentação interativa gerada pela API (em `/docs`):
+
+![Endpoints públicos](docs/img/api-publica.png)
+
+![Endpoints do dono](docs/img/api-admin.png)
+
+Resposta real de `GET /v1/admin/bookings` (agenda do dono, com telefone e dados do formulário):
+
+![Agenda do dono](docs/img/api-agenda-do-dono.png)
+
+Os dados dos prints são fictícios.
 
 ## Objetivo
 
@@ -174,27 +206,55 @@ Princípio: pedir o mínimo necessário, em respeito à LGPD e à conversão das
 
 ### Pública (header `X-API-Key` + origem permitida)
 
-| Método | Rota | Descrição | Situação |
-|---|---|---|---|
-| GET | `/v1/config` | Configuração de campos e regras do tenant | pronto |
-| GET | `/v1/resources` | Profissionais/agendas ativos | pronto |
-| GET | `/v1/services` | Serviços disponíveis, com os recursos que atendem cada um | pronto |
-| GET | `/v1/availability?service_id=&from=&to=` | Dias com vaga (máximo de 62 dias) | pronto |
-| GET | `/v1/slots?service_id=&date=` | Horários livres do dia, no fuso do negócio | pronto |
-| POST | `/v1/bookings` | Cria um agendamento | a fazer |
-| GET | `/v1/bookings/{token}` | Consulta um agendamento | a fazer |
-| POST | `/v1/bookings/{token}/cancel` | Cancela um agendamento | a fazer |
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/v1/config` | Configuração de campos e regras do negócio |
+| GET | `/v1/resources` | Profissionais/agendas ativos |
+| GET | `/v1/services` | Serviços disponíveis, com os profissionais que atendem cada um |
+| GET | `/v1/availability?service_id=&from=&to=` | Dias com vaga (máximo de 62 dias) |
+| GET | `/v1/slots?service_id=&date=` | Horários livres do dia, no fuso do negócio |
+| POST | `/v1/bookings` | Cria um agendamento (header opcional `Idempotency-Key`) |
+| GET | `/v1/bookings/{token}` | Consulta um agendamento |
+| POST | `/v1/bookings/{token}/cancel` | Cancela um agendamento |
 
 `resource_id` é opcional em `/slots` e `/availability`: sem ele, o horário aparece uma vez com a lista de profissionais livres.
 
+Regras do `POST /v1/bookings`:
+
+- O horário precisa ser um dos devolvidos por `/slots` (conferido de novo no servidor, com a reserva travada por serviço). Dois pedidos simultâneos para o mesmo horário: um recebe `201` e o outro `409`.
+- Repetir a mesma `Idempotency-Key` devolve o agendamento original (`200`) em vez de duplicar.
+- Telefone é normalizado para E.164 (sem `+`, assume Brasil). O cliente é único por telefone dentro do negócio.
+- Campos, obrigatoriedade e campos personalizados vêm do `form_config` do negócio. Duração e preço vêm do serviço, nunca do pedido.
+- Máximo de 3 agendamentos ativos e futuros por telefone.
+- O status inicial é `confirmado` ou `pendente`, conforme `auto_confirm` do negócio.
+- Erros de regra voltam como `{"detail": "...", "code": "..."}` (por exemplo `slot_unavailable`, `rate_limited`).
+
 ### Administrativa (JWT do dono)
 
-Prontos: `POST /v1/admin/login` (slug do negócio, e-mail e senha), `GET /v1/admin/me` e gestão das chaves de API (`GET`/`POST /v1/admin/api-keys`, `DELETE /v1/admin/api-keys/{id}` para revogar). A chave completa só aparece na criação.
+Login em `POST /v1/admin/login` (slug do negócio, e-mail e senha). As demais rotas usam `Authorization: Bearer <token>`.
 
-A fazer:
-
-- CRUD de serviços, recursos, horários semanais, exceções e bloqueios
-- Listar, confirmar, cancelar e remarcar agendamentos
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/v1/admin/me` | Dados do usuário logado |
+| GET, PATCH | `/v1/admin/settings` | Nome, fuso, modo de disponibilidade, confirmação automática, antecedência mínima, antecedência máxima, sites permitidos e campos do formulário |
+| GET, POST | `/v1/admin/api-keys` | Lista e cria chaves de API (a chave completa só aparece na criação) |
+| DELETE | `/v1/admin/api-keys/{id}` | Revoga uma chave |
+| GET, POST | `/v1/admin/resources` | Lista e cria profissionais |
+| PATCH, DELETE | `/v1/admin/resources/{id}` | Edita, desativa ou remove (bloqueado se houver agendamentos futuros) |
+| GET, POST | `/v1/admin/services` | Lista e cria serviços (duração, intervalo e folga em múltiplos de 10 minutos) |
+| PATCH, DELETE | `/v1/admin/services/{id}` | Edita ou remove (bloqueado se houver agendamentos futuros) |
+| GET, PUT | `/v1/admin/resources/{id}/weekly-rules` | Horário semanal; o `PUT` troca tudo de uma vez |
+| GET, POST | `/v1/admin/date-exceptions` | Dias fechados ou com horário especial |
+| DELETE | `/v1/admin/date-exceptions/{id}` | Remove a exceção |
+| GET, POST | `/v1/admin/blocks` | Bloqueios pontuais de horário |
+| DELETE | `/v1/admin/blocks/{id}` | Remove o bloqueio |
+| GET | `/v1/admin/bookings` | Agendamentos, com filtros `status`, `date_from`, `date_to`, `resource_id` |
+| GET | `/v1/admin/bookings/{id}` | Detalhe, com telefone e dados do formulário |
+| POST | `/v1/admin/bookings/{id}/confirm` | Pendente para confirmado |
+| POST | `/v1/admin/bookings/{id}/complete` | Confirmado para concluído |
+| POST | `/v1/admin/bookings/{id}/no-show` | Confirmado para não compareceu |
+| POST | `/v1/admin/bookings/{id}/cancel` | Cancela e libera o horário |
+| POST | `/v1/admin/bookings/{id}/reschedule` | Remarca para outro horário livre (e, opcionalmente, outro profissional) |
 
 ### Como o dono ganha acesso
 
@@ -225,15 +285,13 @@ Quando um agendamento é concluído, a API envia uma mensagem ao WhatsApp Busine
 
 - Chave de API guardada só como hash SHA-256; senha com scrypt; JWT HS256 com expiração
 - Com `ENV=production` a API não sobe sem um `JWT_SECRET` de 32+ caracteres
-- Se a requisição traz `Origin`, ele precisa estar em `allowed_origins` do negócio (lista vazia bloqueia navegadores). Chamadas de servidor, sem `Origin`, só precisam da chave
-
-- Rate limit por IP e por API key no endpoint público
-- Validação de entrada com Pydantic
-- Honeypot no `POST /v1/bookings`
+- Se a requisição traz `Origin`, ele precisa estar em `allowed_origins` do negócio (lista vazia bloqueia navegadores). Chamadas de servidor, sem `Origin`, só precisam da chave. O CORS da aplicação fica aberto de propósito, e essa verificação é feita no servidor por negócio
+- Limite de requisições por IP (padrão: 10 por minuto no login e na criação de agendamento), em memória. Atrás do proxy do Render vale `TRUSTED_PROXY_HOPS=1`; confirme o valor no primeiro deploy, porque ele decide qual IP do `X-Forwarded-For` é usado. Com mais de uma instância o limite passa a ser por instância
+- Validação de entrada com Pydantic; honeypot (`website`) no `POST /v1/bookings`
 - Limite de agendamentos ativos por telefone
 - Duração e preço sempre recalculados no backend
-- CORS restrito aos domínios cadastrados no tenant
-- Verificação de telefone por OTP: fase 2, opcional por tenant
+- Dois negócios nunca enxergam dados um do outro (todas as consultas filtram por `tenant_id`)
+- Verificação de telefone por OTP: fase 2, opcional por negócio
 
 ## Modelo de dados
 
@@ -253,19 +311,25 @@ Observações:
 agendamento-api/
 ├── app/
 │   ├── main.py
-│   ├── core/          # config, seguranca (API key, JWT), rate limit
-│   ├── db/            # sessao, base
+│   ├── cli.py            # create-tenant, expire-pending
+│   ├── deps.py           # resolve o negócio pela chave de API e o dono pelo JWT
+│   ├── core/             # config, segurança, rate limit, erros
+│   ├── db/               # sessão, base
 │   ├── models/
-│   ├── schemas/       # Pydantic
+│   ├── schemas/          # Pydantic
 │   ├── services/
-│   │   └── slots.py   # motor de calculo de horarios
-│   ├── routers/
-│   │   ├── public/
-│   │   └── admin/
-│   └── deps.py        # resolve o tenant pela API key
+│   │   ├── slots.py      # motor de cálculo de horários (puro, sem banco)
+│   │   ├── loader.py     # carrega do banco o que o motor precisa
+│   │   ├── booking.py    # criar, cancelar e remarcar
+│   │   └── forms.py      # validação contra o form_config
+│   └── routers/
+│       ├── public/
+│       └── admin/
+├── examples/             # página de agendamento e script de demonstração
+├── docs/img/             # prints do README
 ├── tests/
-│   └── test_slots.py
 ├── alembic/
+├── render.yaml           # blueprint do Render (API + job de expiração)
 ├── pyproject.toml
 └── Dockerfile
 ```
@@ -275,11 +339,11 @@ agendamento-api/
 1. Modelos e migrations (concluído)
 2. Autenticação: API key pública e JWT do dono (concluído)
 3. Motor de slots com testes (regra semanal, exceções, bloqueios, buffer, antecedência, fuso) (concluído)
-4. Endpoints públicos de consulta (`config`, `resources`, `services`, `availability`, `slots`) (concluído)
-5. `POST /bookings` com constraint de exclusão e idempotência
-6. Endpoints administrativos
-7. CORS por tenant, rate limit e deploy no Render
-8. Fase 2: aviso ao dono pelo WhatsApp Business, e-mail e WhatsApp ao cliente, lembretes, webhooks, OTP, sincronização com Google Calendar, pagamento/sinal
+4. Endpoints públicos de consulta (concluído)
+5. `POST /bookings` com constraint de exclusão e idempotência (concluído)
+6. Endpoints administrativos (concluído)
+7. Rate limit, honeypot e blueprint do Render (concluído); falta publicar no Render e no Supabase
+8. Fase 2: aviso ao dono pelo WhatsApp Business, e-mail e WhatsApp ao cliente, lembretes, webhooks, OTP, sincronização com Google Calendar, pagamento/sinal, botão de agendamento embutível para os sites
 
 ## Hospedagem e ambientes
 
@@ -293,7 +357,7 @@ agendamento-api/
 Ambientes:
 
 - Desenvolvimento: Docker Compose local com PostgreSQL.
-- Produção: Render + Supabase, com migrations executadas no deploy (`alembic upgrade head`).
+- Produção: Render + Supabase, com migrations executadas no deploy (`alembic upgrade head`). O `render.yaml` descreve o web service e um job de hora em hora (`python -m app.cli expire-pending`) que cancela agendamentos pendentes que passaram do horário sem confirmação. A `DATABASE_URL` do Supabase é informada no painel do Render.
 
 Decisões e cuidados:
 
@@ -305,7 +369,7 @@ Decisões e cuidados:
 
 ## Fora do escopo desta etapa
 
-- Painel administrativo visual (a gestão é feita pela API/Swagger)
+- Painel administrativo visual (a gestão é feita pela API/Swagger; a página em `examples/` é só um exemplo de uso)
 - Pagamento e sinal
 - Integração com calendários externos
 
