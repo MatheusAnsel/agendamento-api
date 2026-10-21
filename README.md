@@ -375,4 +375,4 @@ Decisões e cuidados:
 
 ## Licença
 
-A definir.
+Distribuído sob a licença MIT. Veja o arquivo [LICENSE](LICENSE).
